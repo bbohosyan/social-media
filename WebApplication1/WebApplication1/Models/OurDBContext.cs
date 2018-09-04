@@ -9,5 +9,6 @@ namespace WebApplication1.Models
     public class OurDBContext : DbContext
     {
         public DbSet<UserAccount> userAccount { get; set; }
+        public DbSet<Session> session { get; set; }
     }
 }

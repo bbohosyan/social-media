@@ -3,30 +3,26 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Web;
-using System.Web.Mvc;
+using System.Web.Http;
 using WebApplication1.Models;
 
 namespace WebApplication1.Controllers
 {
-    public class AccountController : Controller
+    public class AccountController : ApiController
     {
+        [HttpGet]
         [Route("getAllUsers")]
-        public String Index()
+        public List<UserAccount> Index()
         {
             using (OurDBContext db = new OurDBContext())
             {
-                StringBuilder result = new StringBuilder();
-                foreach(UserAccount userAccount in db.userAccount.ToList())
-                {
-                    result.Append(userAccount.Username + userAccount.Description + ", ");
-                }
-                return result.ToString();
+                return db.userAccount.ToList();
             }
         }
 
         [HttpPost]
         [Route("register")]
-        public UserAccount Register(UserAccount account)
+        public UserAccount Register([FromBody]UserAccount account)
         {
             if (ModelState.IsValid)
             {
@@ -36,28 +32,27 @@ namespace WebApplication1.Controllers
                     db.SaveChanges();
                 }
                 ModelState.Clear();
-                ViewBag.Message = account.Username + " successfully registered"; ;
             }
             return account;
         }
 
-        public ActionResult Login()
-        {
-            return View();
-        }
-
         [HttpPost]
         [Route("login")]
-        public ActionResult Login(String username, String password)
+        public UserAccount Login([FromBody]LoginParameters loginParameters)
         {
             using (OurDBContext db = new OurDBContext())
             {
-                var usr = db.userAccount.Single(u => u.Username == username && u.Password == password);
+                var usr = db.userAccount.Single(u => u.Username == loginParameters.username && u.Password == loginParameters.password);
                 if(usr != null)
                 {
-                    Session["UserID"] = usr.UserID.ToString();
-                    Session["Username"] = usr.Username.ToString();
-                    return RedirectToAction("LoggedIn");
+                    if(db.session.ToList().Count == 0)
+                    {
+                        db.session.Add(new Session());
+                        db.SaveChanges();
+                    }
+                    db.session.ToList()[0].UserID = usr.UserID;
+                    db.session.ToList()[0].Username = usr.Username;
+                    return usr;
                 }
                 else
                 {
@@ -67,154 +62,153 @@ namespace WebApplication1.Controllers
             }
         }
 
-        public ActionResult LoggedIn()
-        {
-            if(Session["UserId"] != null)
-            {
-                return null;
-            }
-            else
-            {
-                return RedirectToAction("Login");
-            }
-        }
-
+        [HttpPost]
         [Route("logout")]
-        public String Logout(String username, String password)
+        public UserAccount Logout()
         {
-            Session["UserId"] = null;
-            return "Logout";
+            using (OurDBContext db = new OurDBContext())
+            {
+                var usr = db.userAccount.Single(u => u.UserID == db.session.ToList()[0].UserID);
+                db.session.ToList()[0].UserID = -1;
+                return usr;
+            }
         }
 
+        [HttpPut]
         [Route("changePassword")]
-        public String changePassword(String username, String password, String newPassword)
+        public String changePassword([FromBody]String newPassword)
         {
             using (OurDBContext db = new OurDBContext())
             {
-                var usr = db.userAccount.Single(u => u.UserID.ToString().Equals(Session["UserId"].ToString()));
+                var session = HttpContext.Current.Session;
+                var usr = db.userAccount.Single(u => u.UserID == db.session.ToList()[0].UserID);
                 usr.Password = newPassword;
-                return "changed password";
+                return newPassword;
             }
         }
 
+        [HttpPut]
         [Route("changeDescription")]
-        public String changeDescription(String newDescription)
+        public String changeDescription([FromBody]String newDescription)
         {
             using (OurDBContext db = new OurDBContext())
             {
-                var usr = db.userAccount.Single(u => u.UserID.ToString().Equals(Session["UserId"].ToString()));
+                var session = HttpContext.Current.Session;
+                var usr = db.userAccount.Single(u => u.UserID == db.session.ToList()[0].UserID);
                 usr.Description = newDescription;
-                return "changed description";
+                return newDescription;
             }
         }
 
+        [HttpPost]
         [Route("subscribe")]
-        public String subscribe(String username)
+        public UserAccount subscribe([FromBody]String username)
         {
             using (OurDBContext db = new OurDBContext())
             {
-                var usr = db.userAccount.Single(u => u.UserID.ToString().Equals(Session["UserId"].ToString()));
+                var session = HttpContext.Current.Session;
+                var usr = db.userAccount.Single(u => u.UserID == db.session.ToList()[0].UserID);
                 var subscription = db.userAccount.Single(u => u.Username == username);
                 if (!subscription.blockedUsers.Contains(usr))
                 {
                     subscription.subscribers.Add(usr);
                     usr.subscriptions.Add(subscription);
                 }
+                return subscription;
             }
-            return "subscribed to " + username;
         }
 
+        [HttpDelete]
         [Route("unsubscribe")]
-        public String unsubscribe(String username)
+        public UserAccount unsubscribe([FromBody]String username)
         {
             using (OurDBContext db = new OurDBContext())
             {
-                var usr = db.userAccount.Single(u => u.UserID.ToString().Equals(Session["UserId"].ToString()));
+                var usr = db.userAccount.Single(u => u.UserID == db.session.ToList()[0].UserID);
                 var subscription = db.userAccount.Single(u => u.Username == username);
                     subscription.subscribers.Remove(usr);
                     usr.subscriptions.Remove(subscription);
+                return subscription;
             }
-            return "subscribed to " + username;
         }
 
+        [HttpPost]
         [Route("publishMessage")]
-        public String publish(String message)
+        public String publish([FromBody]String message)
         {
             using (OurDBContext db = new OurDBContext())
             {
-                var usr = db.userAccount.Single(u => u.UserID.ToString().Equals(Session["UserId"].ToString()));
+                var usr = db.userAccount.Single(u => u.UserID == db.session.ToList()[0].UserID);
                 usr.messages.Add(message);
             }
-            return "message is published";
+            return message;
         }
 
+        [HttpGet]
         [Route("getSubscribers")]
-        public String getSubscribers()
+        public List<UserAccount> getSubscribers()
         {
             using (OurDBContext db = new OurDBContext())
             {
-                var usr = db.userAccount.Single(u => u.UserID.ToString().Equals(Session["UserId"].ToString()));
-                StringBuilder result = new StringBuilder();
-                foreach (UserAccount userAccount in usr.subscribers)
-                {
-                    foreach (String message in userAccount.messages)
-                    {
-                        result.Append(message + ", ");
-                    };
-                }
-                return result.ToString();
+                var session = HttpContext.Current.Session;
+                var usr = db.userAccount.Single(u => u.UserID == db.session.ToList()[0].UserID);
+                return usr.subscribers;
             }
         }
 
+        [HttpPost]
         [Route("sendMessage")]
-        public String sendMessage(String message, String username)
+        public String sendMessage([FromBody]SendMessageParameters sendMessageParameters)
         {
             using (OurDBContext db = new OurDBContext())
             {
-                var usr = db.userAccount.Single(u => u.UserID.ToString().Equals(Session["UserId"].ToString()));
-                var receiver = db.userAccount.Single(u => u.Username.Equals(username));
-                usr.sentMessages.Add(message, receiver);
-                receiver.personalMessages.Add(message, usr);
+                var usr = db.userAccount.Single(u => u.UserID == db.session.ToList()[0].UserID);
+                var receiver = db.userAccount.Single(u => u.Username.Equals(sendMessageParameters.Username));
+                usr.sentMessages.Add(sendMessageParameters.Message, receiver);
+                receiver.personalMessages.Add(sendMessageParameters.Message, usr);
             }
-            return "message " + message + " is sent";
+            return sendMessageParameters.Message;
         }
 
+        [HttpPost]
         [Route("blockUser")]
-        public String blockUser(String username)
+        public UserAccount blockUser([FromBody]String username)
         {
             using (OurDBContext db = new OurDBContext())
             {
-                var usr = db.userAccount.Single(u => u.UserID.ToString().Equals(Session["UserId"].ToString()));
+                var usr = db.userAccount.Single(u => u.UserID == db.session.ToList()[0].UserID);
                 var userToBlock = db.userAccount.Single(u => u.Username.Equals(username));
                 usr.blockedUsers.Add(userToBlock);
+                return userToBlock;
             }
-            return "username " + username + " is blocked";
         }
 
+        [HttpPut]
         [Route("changeMessage")]
-        public String changeMessage(String message, String newMessage, UserAccount userAccount)
+        public String changeMessage([FromBody]ChangeMessageParameters changeMessageParameters)
         {
             using (OurDBContext db = new OurDBContext())
             {
-                var usr = db.userAccount.Single(u => u.UserID.ToString().Equals(Session["UserId"].ToString()));
-                usr.sentMessages.Remove(message);
-                usr.sentMessages.Add(newMessage, userAccount);
-                userAccount.personalMessages.Add(newMessage, usr);
-                userAccount.personalMessages.Remove(message);
+                var usr = db.userAccount.Single(u => u.UserID == db.session.ToList()[0].UserID);
+                usr.sentMessages.Remove(changeMessageParameters.Message);
+                usr.sentMessages.Add(changeMessageParameters.NewMessage, changeMessageParameters.UserAccount);
+                changeMessageParameters.UserAccount.personalMessages.Add(changeMessageParameters.NewMessage, usr);
+                changeMessageParameters.UserAccount.personalMessages.Remove(changeMessageParameters.Message);
             }
-            return "message " + message + " to " + userAccount.Username + " was changed";
+            return changeMessageParameters.Message;
         }
 
+        [HttpDelete]
         [Route("deleteMessage")]
-        public String deleteMessage(String message, UserAccount userAccount)
+        public String deleteMessage([FromBody]String message, [FromBody]UserAccount userAccount)
         {
             using (OurDBContext db = new OurDBContext())
             {
-                var usr = db.userAccount.Single(u => u.UserID.ToString().Equals(Session["UserId"].ToString()));
+                var usr = db.userAccount.Single(u => u.UserID == db.session.ToList()[0].UserID);
                 usr.sentMessages.Remove(message);
                 userAccount.personalMessages.Remove(message);
             }
-            return "message " + message + " to " + userAccount.Username + " was deleted";
+            return message;
         }
     }
 }
